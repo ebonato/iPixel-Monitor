@@ -58,7 +58,8 @@ Use **Ctrl+C** para encerrar. O arquivo `monitor-ipixel.cmd` também pode ser us
 | `--disk D:` | Unidade monitorada. Por padrão, usa a unidade do Windows. |
 | `--gpu-index N` | Índice da GPU NVIDIA no `nvidia-smi`. Padrão de 0. |
 | `--dell-cpu-sensor ID` | Lê primeiro o sensor térmico do firmware Dell. Opcional e desativado por padrão. |
-| `--pawnio-modules PASTA` | Lê a temperatura via PawnIO e seus módulos assinados. Opcional e desativado por padrão. |
+| `--pawnio` | Usa o PawnIO com os módulos preparados pelo projeto. Opcional e desativado por padrão. |
+| `--pawnio-modules PASTA` | Usa o PawnIO com módulos de uma pasta informada manualmente. |
 | `--lhm-url URL` ou `--no-lhm` | Endereço JSON do LibreHardwareMonitor ou desativação da consulta. Padrão `http://127.0.0.1:8085/data.json`. |
 | `--once` | Envia um quadro e encerra. Com `--page auto`, envia a principal. |
 | `--preview ARQUIVO.png` e `--preview-page principal\|detalhes` | Gera um PNG de 768×128 com as métricas do PC, sem conexão Bluetooth. Padrão `principal`. |
@@ -97,11 +98,14 @@ Substitua o endereço pelo do painel. Em outros modelos, confirme qual ID corres
 
 ### Temperatura da CPU pelo PawnIO
 
-Em hardware compatível, o monitor pode ler a temperatura diretamente pelo driver [PawnIO](https://pawnio.eu/), sem um aplicativo de sensores aberto e sem servidor HTTP. Instale o driver oficial e extraia os [módulos assinados](https://github.com/namazso/PawnIO.Modules/releases) em uma pasta. Informe a pasta onde estiver `IntelMSR.bin` ou `AMDFamily17.bin`. O monitor escolhe o módulo pelo fabricante do processador. O Windows exige execução como administrador.
+Em hardware compatível, o monitor lê a temperatura pelo driver [PawnIO](https://pawnio.eu/). Abra um terminal como administrador na pasta do projeto e execute a preparação uma vez. O script baixa os arquivos oficiais, verifica os hashes SHA-256, valida a assinatura do instalador e abre a instalação do driver quando ele estiver ausente. O Windows ainda requer a confirmação do instalador. Se o driver já estiver instalado, o script o reutiliza. Os módulos ficam em `Program Files\iPixel-Monitor\PawnIO-Modules`.
 
 ```powershell
-.\monitor-ipixel.cmd --address 02:00:00:00:00:01 --pawnio-modules C:\Projetos\PawnIO-Modules --no-lhm
+.\.venv\Scripts\python.exe .\preparar_pawnio.py
+.\monitor-ipixel.cmd --address 02:00:00:00:00:01 --pawnio --no-lhm
 ```
+
+O monitor escolhe o módulo pelo fabricante do processador. Para usar arquivos já extraídos do [pacote oficial de módulos assinados](https://github.com/namazso/PawnIO.Modules/releases), use `--pawnio-modules PASTA` no lugar de `--pawnio`. O modo `--download-to PASTA` do script salva o instalador e os dois módulos verificados para uso offline.
 
 A leitura Intel foi testada no **Core i7-13650HX**. A opção AMD lê **Tctl**, que é a temperatura de controle e pode diferir de **Tdie**. Ela ainda precisa de validação em hardware AMD. [Documentação de Tctl e Tdie](https://docs.kernel.org/hwmon/k10temp.html)
 
@@ -140,4 +144,5 @@ Com WMI Dell ou PawnIO, use **Executar com privilégios mais altos**. Instale o 
 - [windows_io.py](windows_io.py) consulta os contadores nativos de disco e rede.
 - [dell_temperature.py](dell_temperature.py) lê o sensor térmico do firmware Dell via WMI.
 - [pawnio_temperature.py](pawnio_temperature.py) lê a temperatura da CPU pelos módulos assinados do PawnIO.
+- [preparar_pawnio.py](preparar_pawnio.py) baixa e verifica os arquivos oficiais para o modo PawnIO.
 - [monitor-ipixel.cmd](monitor-ipixel.cmd) inicia o script no Windows e repassa seus argumentos.

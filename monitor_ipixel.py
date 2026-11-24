@@ -302,7 +302,7 @@ async def run(args):
         cpu_sensor = None
         if args.dell_cpu_sensor is not None:
             cpu_sensor = DellTemperature(args.dell_cpu_sensor)
-        elif args.pawnio_modules is not None:
+        elif args.pawnio or args.pawnio_modules is not None:
             from pawnio_temperature import PawnIOTemperature
             cpu_sensor = resources.enter_context(PawnIOTemperature(args.pawnio_modules))
         metrics = WindowsMetrics(args.lhm_url, disk, args.gpu_index, cpu_sensor)
@@ -371,6 +371,7 @@ def main():
     parser.add_argument("--gpu-index", type=int, default=0, help="Índice da GPU NVIDIA no nvidia-smi.")
     cpu = parser.add_mutually_exclusive_group()
     cpu.add_argument("--dell-cpu-sensor", type=int, help="ID do sensor térmico da CPU no firmware Dell.")
+    cpu.add_argument("--pawnio", action="store_true", help="Usa o PawnIO e os módulos preparados pelo projeto.")
     cpu.add_argument("--pawnio-modules", type=Path, help="Pasta com os módulos oficiais assinados do PawnIO.")
     lhm = parser.add_mutually_exclusive_group()
     lhm.add_argument("--lhm-url", default=DEFAULT_LHM_URL, help="URL JSON do LibreHardwareMonitor.")

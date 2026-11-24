@@ -18,6 +18,11 @@ def registry_string(key, name):
         return winreg.QueryValueEx(handle, name)[0]
 
 
+def pawnio_paths():
+    program_files = Path(registry_string(r"SOFTWARE\Microsoft\Windows\CurrentVersion", "ProgramFilesDir"))
+    return program_files / "PawnIO" / "PawnIOLib.dll", program_files / "iPixel-Monitor" / "PawnIO-Modules"
+
+
 def intel_cpu_package(target, status):
     tj_max = (target >> 16) & 0xFF
     if not 70 <= tj_max <= 150 or not status & (1 << 31):
@@ -37,15 +42,18 @@ def amd_cpu_tctl(status):
 class PawnIOTemperature:
     """Read Intel CPU Package or AMD Zen Tctl through official signed PawnIO modules."""
 
-    def __init__(self, modules):
+    def __init__(self, modules=None):
         vendor = registry_string(r"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "VendorIdentifier")
         module_name = {"GenuineIntel": "IntelMSR.bin", "AuthenticAMD": "AMDFamily17.bin"}.get(vendor)
         if not module_name:
             raise ValueError(f"CPU sem módulo térmico PawnIO compatível: {vendor}")
         self.intel = vendor == "GenuineIntel"
-        self.blob = (modules / module_name).read_bytes()
-        program_files = registry_string(r"SOFTWARE\Microsoft\Windows\CurrentVersion", "ProgramFilesDir")
-        dll_path = Path(program_files) / "PawnIO" / "PawnIOLib.dll"
+        dll_path, default_modules = pawnio_paths()
+        module_folder = modules if modules is not None else default_modules
+        module_path = module_folder / module_name
+        if not module_path.is_file() or not dll_path.is_file():
+            raise FileNotFoundError("Prepare o PawnIO com preparar_pawnio.py ou confira a pasta dos módulos.")
+        self.blob = module_path.read_bytes()
         self.api = ctypes.WinDLL(str(dll_path))
         self.api.pawnio_open.argtypes = [ctypes.POINTER(wintypes.HANDLE)]
         self.api.pawnio_load.argtypes = [wintypes.HANDLE, ctypes.c_char_p, ctypes.c_size_t]
