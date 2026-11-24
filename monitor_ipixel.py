@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from ctypes import wintypes
+from contextlib import ExitStack
 from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -20,6 +21,7 @@ from bleak.exc import BleakError
 from PIL import Image, ImageDraw
 from pypixelcolor import AsyncClient
 
+from dell_temperature import DellTemperature
 from windows_io import DiskCounters, NetworkCounters
 
 SIZE = (96, 16)
@@ -49,6 +51,20 @@ GLYPHS = {
 }
 
 
+def find_nvidia_smi():
+    if not ctypes.windll.shell32.IsUserAnAdmin():
+        return shutil.which("nvidia-smi")
+
+    # An elevated task must not execute programs found in the user's PATH.
+    system_directory = ctypes.create_unicode_buffer(32768)
+    length = ctypes.windll.kernel32.GetSystemDirectoryW(system_directory, len(system_directory))
+    if 0 < length < len(system_directory):
+        candidate = Path(system_directory.value) / "nvidia-smi.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 class MemoryStatus(ctypes.Structure):
     _fields_ = [
         ("length", wintypes.DWORD), ("load", wintypes.DWORD),
@@ -76,16 +92,17 @@ class Metrics:
 
 
 class WindowsMetrics:
-    def __init__(self, lhm_url, disk, gpu_index):
+    def __init__(self, lhm_url, disk, gpu_index, cpu_sensor=None):
         self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         self.kernel.GetSystemTimes.argtypes = [ctypes.POINTER(wintypes.FILETIME)] * 3
         self.kernel.GlobalMemoryStatusEx.argtypes = [ctypes.POINTER(MemoryStatus)]
         self.last_cpu = self.cpu_times()
         self.disk = disk
         self.network = NetworkCounters()
-        self.nvidia_smi = shutil.which("nvidia-smi")
+        self.nvidia_smi = find_nvidia_smi()
         self.gpu_index = gpu_index
         self.lhm_url = lhm_url
+        self.cpu_sensor = cpu_sensor
 
     def cpu_times(self):
         idle, kernel, user = (wintypes.FILETIME() for _ in range(3))
@@ -107,8 +124,9 @@ class WindowsMetrics:
         download, upload = self.network.read()
         gpu, gpu_temp, vram_used, vram_total = self.read_nvidia()
         sensors = read_lhm(self.lhm_url) if self.lhm_url else {}
+        cpu_temp = self.cpu_sensor.read() if self.cpu_sensor else None
         return Metrics(
-            cpu, sensors.get("cpu_temp"),
+            cpu, cpu_temp if cpu_temp is not None else sensors.get("cpu_temp"),
             gpu if gpu is not None else sensors.get("gpu"),
             gpu_temp if gpu_temp is not None else sensors.get("gpu_temp"),
             ram.load, (ram.total - ram.available) / 2**30,
@@ -279,8 +297,15 @@ async def run(args):
             LOGGER.info("Nenhum painel LED encontrado. Ligue o painel e desconecte o aplicativo do celular.")
         return
 
-    with DiskCounters(args.disk) as disk:
-        metrics = WindowsMetrics(args.lhm_url, disk, args.gpu_index)
+    with ExitStack() as resources:
+        disk = resources.enter_context(DiskCounters(args.disk))
+        cpu_sensor = None
+        if args.dell_cpu_sensor is not None:
+            cpu_sensor = DellTemperature(args.dell_cpu_sensor)
+        elif args.pawnio_modules is not None:
+            from pawnio_temperature import PawnIOTemperature
+            cpu_sensor = resources.enter_context(PawnIOTemperature(args.pawnio_modules))
+        metrics = WindowsMetrics(args.lhm_url, disk, args.gpu_index, cpu_sensor)
         await asyncio.sleep(0.5)
         if args.preview:
             image = frame(await asyncio.to_thread(metrics.read), args.preview_page)
@@ -344,6 +369,9 @@ def main():
     parser.add_argument("--preview-page", choices=("principal", "detalhes"), default="principal")
     parser.add_argument("--disk", help="Unidade monitorada, por exemplo D:. Padrão: unidade do Windows.")
     parser.add_argument("--gpu-index", type=int, default=0, help="Índice da GPU NVIDIA no nvidia-smi.")
+    cpu = parser.add_mutually_exclusive_group()
+    cpu.add_argument("--dell-cpu-sensor", type=int, help="ID do sensor térmico da CPU no firmware Dell.")
+    cpu.add_argument("--pawnio-modules", type=Path, help="Pasta com os módulos oficiais assinados do PawnIO.")
     lhm = parser.add_mutually_exclusive_group()
     lhm.add_argument("--lhm-url", default=DEFAULT_LHM_URL, help="URL JSON do LibreHardwareMonitor.")
     lhm.add_argument("--no-lhm", dest="lhm_url", action="store_const", const=None, help="Desativa a consulta.")
@@ -366,6 +394,8 @@ def main():
         parser.error("--scan-seconds deve estar entre 1 e 60 segundos.")
     if args.gpu_index < 0:
         parser.error("--gpu-index deve ser zero ou maior.")
+    if args.dell_cpu_sensor is not None and not 1 <= args.dell_cpu_sensor <= 255:
+        parser.error("--dell-cpu-sensor deve estar entre 1 e 255.")
 
     if args.log_file:
         args.log_file.parent.mkdir(parents=True, exist_ok=True)
