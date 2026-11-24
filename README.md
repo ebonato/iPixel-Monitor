@@ -1,4 +1,4 @@
-# Monitor iPixel 96×16
+# iPixel Monitor 96×16
 
 Transforma um painel LED **iPixel Color 96×16** em um monitor de hardware do Windows. Um script Python lê as métricas do PC, desenha quadros coloridos e os envia ao painel por Bluetooth Low Energy (BLE).
 
@@ -26,8 +26,8 @@ Os sensores NVIDIA e LibreHardwareMonitor são opcionais. O monitor funciona com
 Abra o PowerShell na pasta do projeto. Se preferir, baixe o ZIP pelo menu **Code → Download ZIP** do GitHub e abra o PowerShell na pasta extraída.
 
 ```powershell
-git clone https://github.com/ebonato/iPixel.git
-cd iPixel
+git clone https://github.com/ebonato/iPixel-Monitor.git
+cd iPixel-Monitor
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
@@ -92,9 +92,9 @@ No **Agendador de Tarefas**, crie uma tarefa para o seu usuário com o gatilho *
 
 | Campo | Exemplo |
 | --- | --- |
-| Programa/script | `C:\Projetos\iPixel\.venv\Scripts\pythonw.exe` |
+| Programa/script | `C:\Projetos\iPixel-Monitor\.venv\Scripts\pythonw.exe` |
 | Argumentos | `monitor_ipixel.py --address 02:00:00:00:00:01 --log-file monitor.log` |
-| Iniciar em | `C:\Projetos\iPixel` |
+| Iniciar em | `C:\Projetos\iPixel-Monitor` |
 
 Troque o caminho e o endereço pelos da sua instalação. Em **Configurações**, remova o limite de duração da tarefa e escolha **Não iniciar uma nova instância** se ela já estiver em execução. Se usar notebook, revise as condições de energia para permitir a execução na bateria. Clique em **Executar** na tarefa para testar. O `monitor.log` deve registrar a conexão e a alternância entre telas. Para parar o monitor, encerre a tarefa pelo Agendador.
 
