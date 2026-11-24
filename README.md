@@ -16,10 +16,16 @@ As prévias usam valores ilustrativos. Por padrão, cada tela fica visível por 
 
 - Windows 10 ou 11 com um adaptador Bluetooth Low Energy habilitado.
 - [Python 3.11 ou mais recente](https://www.python.org/downloads/windows/). A configuração foi validada com Python 3.12 de 64 bits.
-- Painel de **96 colunas × 16 linhas** compatível com o protocolo **iPixel Color**.
+- Painel compatível com o protocolo **iPixel Color**. O layout padrão usa **96 colunas × 16 linhas**.
 - As bibliotecas do [requirements.txt](requirements.txt) cuidam da conexão BLE, do protocolo iPixel e da renderização dos quadros.
 
 Os sensores NVIDIA e as fontes de temperatura da CPU são opcionais. O monitor funciona com as métricas disponíveis e mostra traços quando um sensor está indisponível.
+
+## Onde encontrar o painel
+
+[Painel LED iPixel Color no AliExpress](https://s.click.aliexpress.com/e/_c4plsUqV)
+
+Para usar um painel iPixel Color de outro tamanho, você pode pedir a uma IA para adaptar o código. Informe a largura e a altura em pixels e peça para ajustar as dimensões dos quadros, a distribuição das métricas e a verificação da resolução em `monitor_ipixel.py`.
 
 ## Instalação
 
@@ -77,15 +83,15 @@ Exemplo com atualização a cada 3 segundos, alternância a cada 12 segundos e l
 | --- | --- |
 | Windows | Uso de CPU e RAM. Tempo ativo da unidade lógica e taxa combinada de leitura e gravação. Download e upload agregados nas interfaces Ethernet e Wi-Fi físicas ativas. |
 | NVIDIA `nvidia-smi` | Uso e temperatura da GPU e uso de VRAM. Use `nvidia-smi -L` para conferir o índice. |
-| Firmware Dell via WMI | Temperatura do sensor térmico interno da CPU em modelos compatíveis. O sensor 1 foi verificado no Dell G15 5530. |
+| Firmware via AWCC WMI | Temperatura do sensor térmico interno da CPU em computadores que expõem a interface AWCC WMI. |
 | PawnIO | Leitura direta de **CPU Package** em Intel x64. Leitura **Tctl** em AMD Zen x64 disponível para teste. |
 | LibreHardwareMonitor | Temperatura da CPU. Quando disponível, pode suprir uso e temperatura da GPU que o `nvidia-smi` não fornecer. |
 
 No disco e na rede, **B**, **K**, **M** e **G** indicam bytes, kB, MB e GB por segundo. As barras de rede usam uma escala logarítmica para mostrar tráfego leve. Nos valores de memória, **G** e **T** representam GiB e TiB. As cores da temperatura mudam aos 70 °C e aos 85 °C.
 
-### Temperatura da CPU pelo firmware Dell
+### Temperatura da CPU pelo firmware via WMI
 
-No **Dell G15 5530**, o monitor pode obter a temperatura pelo WMI nativo do Windows, diretamente em Python. Essa fonte dispensa o LibreHardwareMonitor, o servidor HTTP e o PawnIO. O acesso à interface neste modelo requer privilégios de administrador. O valor representa o sensor do firmware e pode diferir de **CPU Package**, que é uma leitura do processador.
+Em computadores que expõem a interface térmica **AWCC WMI**, o monitor pode obter a temperatura pelo WMI nativo do Windows, diretamente em Python. Essa fonte dispensa o LibreHardwareMonitor, o servidor HTTP e o PawnIO. A disponibilidade da interface e o ID do sensor dependem do firmware. O valor representa o sensor do firmware e pode diferir de **CPU Package**, que é uma leitura do processador.
 
 Abra um PowerShell como administrador na pasta do projeto e instale a dependência opcional:
 
@@ -94,7 +100,7 @@ Abra um PowerShell como administrador na pasta do projeto e instale a dependênc
 .\monitor-ipixel.cmd --address 02:00:00:00:00:01 --dell-cpu-sensor 1 --no-lhm
 ```
 
-Substitua o endereço pelo do painel. Em outros modelos, confirme qual ID corresponde à CPU antes de ativar a opção. A interface é descrita na [documentação do kernel Linux sobre Dell AWCC WMI](https://docs.kernel.org/wmi/devices/alienware-wmi.html).
+Substitua o endereço pelo do painel e confirme qual ID corresponde à CPU no seu computador antes de ativar a opção. A interface é descrita na [documentação do kernel Linux sobre Dell AWCC WMI](https://docs.kernel.org/wmi/devices/alienware-wmi.html).
 
 ### Temperatura da CPU pelo PawnIO
 
@@ -107,7 +113,7 @@ Em hardware compatível, o monitor lê a temperatura pelo driver [PawnIO](https:
 
 O monitor escolhe o módulo pelo fabricante do processador. Para usar arquivos já extraídos do [pacote oficial de módulos assinados](https://github.com/namazso/PawnIO.Modules/releases), use `--pawnio-modules PASTA` no lugar de `--pawnio`. O modo `--download-to PASTA` do script salva o instalador e os dois módulos verificados para uso offline.
 
-A leitura Intel foi testada no **Core i7-13650HX**. A opção AMD lê **Tctl**, que é a temperatura de controle e pode diferir de **Tdie**. Ela ainda precisa de validação em hardware AMD. [Documentação de Tctl e Tdie](https://docs.kernel.org/hwmon/k10temp.html)
+A leitura Intel foi validada em hardware Intel x64. A opção AMD lê **Tctl**, que é a temperatura de controle e pode diferir de **Tdie**. Ela ainda precisa de validação em hardware AMD. [Documentação de Tctl e Tdie](https://docs.kernel.org/hwmon/k10temp.html)
 
 ### Temperatura da CPU pelo LibreHardwareMonitor
 
