@@ -61,6 +61,7 @@ Use **Ctrl+C** para encerrar. O arquivo `monitor-ipixel.cmd` também pode ser us
 | `--interval N` | Intervalo de leitura em segundos. Padrão de 2 s. |
 | `--page auto\|principal\|detalhes` | Alterna as telas ou fixa uma delas. Padrão `auto`. |
 | `--page-seconds N` | Tempo em cada tela no modo automático. Padrão de 8 s. |
+| `--theme padrao\|cyberpunk\|gta-vi` | Aparência das duas telas. Padrão `padrao`. |
 | `--disk D:` | Unidade monitorada. Por padrão, usa a unidade do Windows. |
 | `--gpu-index N` | Índice da GPU NVIDIA no `nvidia-smi`. Padrão de 0. |
 | `--dell-cpu-sensor ID` | Lê primeiro o sensor térmico do firmware Dell. Opcional e desativado por padrão. |
@@ -76,6 +77,25 @@ Exemplo com atualização a cada 3 segundos, alternância a cada 12 segundos e l
 ```powershell
 .\monitor-ipixel.cmd --address 02:00:00:00:00:01 --interval 3 --page-seconds 12 --disk D:
 ```
+
+## Temas
+
+Use `--theme` para mudar as cores das duas telas. Sem esse parâmetro, o monitor usa o tema padrão mostrado no início deste README.
+
+**Cyberpunk** · Amarelo elétrico, magenta e ciano.
+
+![Telas principal e de detalhes com o tema Cyberpunk](docs/temas/cyberpunk.png)
+
+**GTA VI** · Rosa, pêssego e turquesa sobre fundo violeta.
+
+![Telas principal e de detalhes com o tema GTA VI](docs/temas/gta-vi.png)
+
+```powershell
+.\monitor-ipixel.cmd --address 02:00:00:00:00:01 --theme cyberpunk
+.\monitor-ipixel.cmd --theme gta-vi --preview gta-vi.png --preview-page detalhes
+```
+
+Para escolher o tema na inicialização automática, acrescente `--theme cyberpunk` ou `--theme gta-vi` aos argumentos do Agendador de Tarefas.
 
 ## Métricas e dependências opcionais
 

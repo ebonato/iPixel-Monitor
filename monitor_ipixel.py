@@ -27,10 +27,38 @@ from windows_io import DiskCounters, NetworkCounters
 SIZE = (96, 16)
 DEFAULT_LHM_URL = "http://127.0.0.1:8085/data.json"
 LOGGER = logging.getLogger("ipixel")
-FILLED = "#eff6ff"
-BACKGROUND = "#020613"
-COLORS = ("#26dcff", "#fa70ef", "#7bff9d")
-NETWORK_COLORS = ("#62f2ff", "#ffc04f")
+
+
+@dataclass(frozen=True)
+class Theme:
+    background: str
+    reading: str
+    heading: str
+    track: str
+    accents: tuple[str, str, str]
+    network: tuple[str, str]
+    heading_rule: str | None = None
+    bar_highlight: str | None = None
+
+
+THEMES = {
+    "padrao": Theme(
+        background="#020613", reading="#eff6ff", heading="#121d36", track="#1b2741",
+        accents=("#26dcff", "#fa70ef", "#7bff9d"), network=("#62f2ff", "#ffc04f"),
+    ),
+    "cyberpunk": Theme(
+        background="#11051b", reading="#fff6b8", heading="#39112e", track="#3c2543",
+        accents=("#f9ef16", "#ff3b9d", "#29f5ff"), network=("#22f5ff", "#ff4b9a"),
+        heading_rule="#ec3297", bar_highlight="#fff2bd",
+    ),
+    "gta-vi": Theme(
+        background="#180d30", reading="#ffedfc", heading="#452051", track="#4a295d",
+        accents=("#ffb16b", "#ff73c3", "#75f7dd"), network=("#75f7dd", "#ffb16b"),
+        heading_rule="#f06cac", bar_highlight="#ffc398",
+    ),
+}
+
+
 GLYPHS = {
     "0": (7, 5, 5, 5, 7), "1": (2, 6, 2, 2, 7),
     "2": (7, 1, 7, 4, 7), "3": (7, 1, 7, 1, 7),
@@ -232,59 +260,63 @@ def rate(value):
             return f"{scaled:.1f}{suffix}" if multiplier > 1 and scaled < 9.95 else f"{round(scaled)}{suffix}"
 
 
-def card_heading(draw, index, title):
+def card_heading(draw, index, title, theme):
     x = index * 32
-    accent = COLORS[index]
-    draw.rectangle((x, 0, x + 30, 5), fill="#121d36")
+    accent = theme.accents[index]
+    draw.rectangle((x, 0, x + 30, 5), fill=theme.heading)
+    if theme.heading_rule:
+        draw.line((x + 1, 5, x + 30, 5), fill=theme.heading_rule)
     draw.line((x, 0, x, 5), fill=accent)
     pixel_text(draw, x + 3, 0, title, accent)
     return x, accent
 
 
-def bar(draw, x, level, accent, segments):
+def bar(draw, x, level, accent, segments, theme):
     for segment in range(segments):
         start = x + segment * 4
-        draw.rectangle((start, 13, start + 2, 15), fill="#1b2741")
+        draw.rectangle((start, 13, start + 2, 15), fill=theme.track)
         if level is not None:
             width = min(3, max(0, round((level / 100 * segments - segment) * 3)))
             if width:
                 draw.rectangle((start, 13, start + width - 1, 15), fill=accent)
+                if theme.bar_highlight:
+                    draw.line((start, 13, start + width - 1, 13), fill=theme.bar_highlight)
 
 
-def card(draw, index, title, reading, detail, level, detail_color=FILLED):
-    x, accent = card_heading(draw, index, title)
-    pixel_text(draw, x, 7, reading, FILLED)
+def card(draw, index, title, reading, detail, level, theme, detail_color=None):
+    x, accent = card_heading(draw, index, title, theme)
+    pixel_text(draw, x, 7, reading, theme.reading)
     if detail:
-        pixel_text(draw, x + 32 - 4 * len(detail), 7, detail, detail_color)
-    bar(draw, x, level, accent, 8)
+        pixel_text(draw, x + 32 - 4 * len(detail), 7, detail, detail_color or theme.reading)
+    bar(draw, x, level, accent, 8, theme)
 
 
-def network_card(draw, download, upload):
-    x, _ = card_heading(draw, 2, "REDE")
-    for index, (value, color, arrow) in enumerate(zip((download, upload), NETWORK_COLORS, ("↓", "↑"))):
+def network_card(draw, download, upload, theme):
+    x, _ = card_heading(draw, 2, "REDE", theme)
+    for index, (value, color, arrow) in enumerate(zip((download, upload), theme.network, ("↓", "↑"))):
         column = x + 16 * index
         pixel_text(draw, x + 21 + 5 * index, 0, arrow, color)
         pixel_text(draw, column, 7, rate(value), color)
         level = None if value is None else 100 * math.log1p(max(0, value) / 1000) / math.log1p(100_000)
-        bar(draw, column, level, color, 4)
+        bar(draw, column, level, color, 4, theme)
 
 
-def frame(metrics, page):
-    image = Image.new("RGB", SIZE, BACKGROUND)
+def frame(metrics, page, theme=THEMES["padrao"]):
+    image = Image.new("RGB", SIZE, theme.background)
     draw = ImageDraw.Draw(image)
     if page == "principal":
         cpu_temp, cpu_color = temperature(metrics.cpu_temp)
         gpu_temp, gpu_color = temperature(metrics.gpu_temp)
-        card(draw, 0, "CPU", percent(metrics.cpu), cpu_temp, metrics.cpu, cpu_color)
-        card(draw, 1, "GPU", percent(metrics.gpu), gpu_temp, metrics.gpu, gpu_color)
-        card(draw, 2, "RAM", percent(metrics.ram), space(metrics.ram_gib), metrics.ram, COLORS[2])
+        card(draw, 0, "CPU", percent(metrics.cpu), cpu_temp, metrics.cpu, theme, cpu_color)
+        card(draw, 1, "GPU", percent(metrics.gpu), gpu_temp, metrics.gpu, theme, gpu_color)
+        card(draw, 2, "RAM", percent(metrics.ram), space(metrics.ram_gib), metrics.ram, theme, theme.accents[2])
     else:
         vram_pct = (100 * metrics.vram_used / metrics.vram_total
                     if metrics.vram_used is not None and metrics.vram_total else None)
         vram_gib = metrics.vram_used / 1024 if metrics.vram_used is not None else None
-        card(draw, 0, "VRAM", percent(vram_pct), space(vram_gib), vram_pct)
-        card(draw, 1, "DISCO", percent(metrics.disk), rate(metrics.disk_bytes_per_second), metrics.disk)
-        network_card(draw, metrics.download, metrics.upload)
+        card(draw, 0, "VRAM", percent(vram_pct), space(vram_gib), vram_pct, theme)
+        card(draw, 1, "DISCO", percent(metrics.disk), rate(metrics.disk_bytes_per_second), metrics.disk, theme)
+        network_card(draw, metrics.download, metrics.upload, theme)
     return image
 
 
@@ -308,7 +340,7 @@ async def run(args):
         metrics = WindowsMetrics(args.lhm_url, disk, args.gpu_index, cpu_sensor)
         await asyncio.sleep(0.5)
         if args.preview:
-            image = frame(await asyncio.to_thread(metrics.read), args.preview_page)
+            image = frame(await asyncio.to_thread(metrics.read), args.preview_page, args.theme)
             image.resize((768, 128), Image.Resampling.NEAREST).save(args.preview)
         else:
             await display(args, metrics)
@@ -332,7 +364,7 @@ async def display(args, metrics):
                     sample = await asyncio.to_thread(metrics.read)
                     if auto and time.monotonic() >= deadline:
                         page = "detalhes" if page == "principal" else "principal"
-                    image = frame(sample, page)
+                    image = frame(sample, page, args.theme)
                     pixels = image.tobytes()
                     if pixels != previous:
                         buffer = io.BytesIO()
@@ -365,6 +397,7 @@ def main():
     parser.add_argument("--scan-seconds", type=float, default=8, help="Duração da busca Bluetooth.")
     parser.add_argument("--interval", type=float, default=2, help="Intervalo de atualização em segundos.")
     parser.add_argument("--page-seconds", type=float, default=8, help="Tempo de exibição de cada tela.")
+    parser.add_argument("--theme", choices=THEMES, default="padrao", help="Tema visual do painel (padrão: padrao).")
     parser.add_argument("--page", choices=("auto", "principal", "detalhes"), default="auto")
     parser.add_argument("--preview-page", choices=("principal", "detalhes"), default="principal")
     parser.add_argument("--disk", help="Unidade monitorada, por exemplo D:. Padrão: unidade do Windows.")
@@ -378,6 +411,7 @@ def main():
     lhm.add_argument("--no-lhm", dest="lhm_url", action="store_const", const=None, help="Desativa a consulta.")
     parser.add_argument("--log-file", type=Path, help="Registra eventos em arquivo com rotação.")
     args = parser.parse_args()
+    args.theme = THEMES[args.theme]
 
     if sys.platform != "win32":
         parser.error("Este monitor requer Windows.")
