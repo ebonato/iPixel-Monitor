@@ -1,16 +1,14 @@
 # iPixel Monitor 96×16
 
-Transforma um painel LED **iPixel Color 96×16** em um monitor de hardware do Windows. Um script Python lê as métricas do PC, desenha quadros coloridos e os envia ao painel por Bluetooth Low Energy (BLE).
+Transforma um painel LED **iPixel Color 96×16** em um monitor de hardware do Windows. Um script Python lê as métricas do PC e envia animações coloridas ao painel por Bluetooth Low Energy (BLE).
 
 **Tela principal** · Uso de CPU, GPU e RAM, temperaturas de CPU e GPU e quantidade de RAM em uso.
 
-![Tela principal com CPU, GPU e RAM](painel-ipixel.png)
-
 **Tela de detalhes** · Uso de VRAM, atividade e taxa de leitura e gravação do disco, download em ciano e upload em âmbar.
 
-![Tela de detalhes com VRAM, disco e rede](painel-ipixel-detalhes.png)
+![Telas principal e de detalhes animadas no tema padrão](docs/temas/padrao.gif)
 
-As prévias usam valores ilustrativos. Por padrão, cada tela fica visível por cerca de **8 segundos**. A cada **2 segundos**, o monitor lê os sensores e envia um novo quadro se os pixels da tela visível mudaram. A conexão é mantida durante a execução e refeita se cair. Os quadros são temporários.
+As prévias usam valores ilustrativos e mostram as duas telas juntas. No painel, elas se alternam a cada **8 segundos**, aproximadamente. A conexão é mantida durante a execução e refeita se cair. As imagens enviadas são temporárias.
 
 ## Requisitos
 
@@ -25,7 +23,7 @@ Os sensores NVIDIA e as fontes de temperatura da CPU são opcionais. O monitor f
 
 [Painel LED iPixel Color no AliExpress](https://s.click.aliexpress.com/e/_c4plsUqV)
 
-Para usar um painel iPixel Color de outro tamanho, você pode pedir a uma IA para adaptar o código. Informe a largura e a altura em pixels e peça para ajustar as dimensões dos quadros, a distribuição das métricas e a verificação da resolução em `monitor_ipixel.py`.
+Para usar um painel iPixel Color de outro tamanho, você pode pedir a uma IA para adaptar o código. Informe a largura e a altura em pixels e peça para ajustar a distribuição das métricas e a verificação da resolução em `monitor_ipixel.py`, além da posição dos efeitos em `display_animation.py`.
 
 ## Instalação
 
@@ -58,21 +56,24 @@ Use **Ctrl+C** para encerrar. O arquivo `monitor-ipixel.cmd` também pode ser us
 | --- | --- |
 | `--address ENDEREÇO` | Endereço BLE do painel. Obrigatório para enviar quadros. |
 | `--scan` e `--scan-seconds N` | Busca de dispositivos LED próximos. Duração padrão de 8 s. |
-| `--interval N` | Intervalo de leitura em segundos. Padrão de 2 s. |
+| `--interval N` | Intervalo em segundos entre atualizações. No modo animado, a espera dentro da mesma tela começa após o envio. Padrão de 2 s. |
 | `--page auto\|principal\|detalhes` | Alterna as telas ou fixa uma delas. Padrão `auto`. |
 | `--page-seconds N` | Tempo em cada tela no modo automático. Padrão de 8 s. |
 | `--theme padrao\|cyberpunk\|gta-vi` | Aparência das duas telas. Padrão `padrao`. |
+| `--animate-values` | Reproduz quatro leituras recentes e anima as bordas e as barras. É o modo padrão de envio e de prévia em GIF. |
+| `--animate` | Anima as bordas dos indicadores e faz uma leitura por atualização. |
+| `--static` | Envia uma imagem estática com uma leitura por atualização. |
 | `--disk D:` | Unidade monitorada. Por padrão, usa a unidade do Windows. |
 | `--gpu-index N` | Índice da GPU NVIDIA no `nvidia-smi`. Padrão de 0. |
 | `--dell-cpu-sensor ID` | Lê primeiro o sensor térmico do firmware Dell. Opcional e desativado por padrão. |
 | `--pawnio` | Usa o PawnIO com os módulos preparados pelo projeto. Opcional e desativado por padrão. |
 | `--pawnio-modules PASTA` | Usa o PawnIO com módulos de uma pasta informada manualmente. |
 | `--lhm-url URL` ou `--no-lhm` | Endereço JSON do LibreHardwareMonitor ou desativação da consulta. Padrão `http://127.0.0.1:8085/data.json`. |
-| `--once` | Envia um quadro e encerra. Com `--page auto`, envia a principal. |
-| `--preview ARQUIVO.png` e `--preview-page principal\|detalhes` | Gera um PNG de 768×128 com as métricas do PC, sem conexão Bluetooth. Padrão `principal`. |
+| `--once` | Envia a tela uma vez e encerra. Com `--page auto`, envia a principal. |
+| `--preview ARQUIVO` e `--preview-page principal\|detalhes` | Gera uma prévia de 768×128 sem Bluetooth. Use `.gif` para animação ou `.png` para uma imagem estática. A tela padrão é `principal`. |
 | `--log-file CAMINHO` | Grava eventos em arquivo com rotação. Útil com `pythonw.exe`. |
 
-Exemplo com atualização a cada 3 segundos, alternância a cada 12 segundos e leitura da unidade D.
+O exemplo configura uma espera de 3 segundos entre atualizações, alternância em cerca de 12 segundos e leitura da unidade D.
 
 ```powershell
 .\monitor-ipixel.cmd --address 02:00:00:00:00:01 --interval 3 --page-seconds 12 --disk D:
@@ -80,22 +81,35 @@ Exemplo com atualização a cada 3 segundos, alternância a cada 12 segundos e l
 
 ## Temas
 
-Use `--theme` para mudar as cores das duas telas. Sem esse parâmetro, o monitor usa o tema padrão mostrado no início deste README.
+Use `--theme` para mudar a aparência e os efeitos das duas telas. O tema `padrao`, mostrado no início do README, também anima os números, as barras e as bordas.
 
 **Cyberpunk** · Amarelo elétrico, magenta e ciano.
 
-![Telas principal e de detalhes com o tema Cyberpunk](docs/temas/cyberpunk.png)
+![Telas principal e de detalhes animadas no tema Cyberpunk](docs/temas/cyberpunk.gif)
 
 **GTA VI** · Rosa, pêssego e turquesa sobre fundo violeta.
 
-![Telas principal e de detalhes com o tema GTA VI](docs/temas/gta-vi.png)
+![Telas principal e de detalhes animadas no tema GTA VI](docs/temas/gta-vi.gif)
 
 ```powershell
 .\monitor-ipixel.cmd --address 02:00:00:00:00:01 --theme cyberpunk
-.\monitor-ipixel.cmd --theme gta-vi --preview gta-vi.png --preview-page detalhes
+.\monitor-ipixel.cmd --theme gta-vi --preview gta-vi.gif --preview-page detalhes
 ```
 
 Para escolher o tema na inicialização automática, acrescente `--theme cyberpunk` ou `--theme gta-vi` aos argumentos do Agendador de Tarefas.
+
+## Modos de exibição
+
+No modo padrão (`--animate-values`), o monitor faz quatro leituras com cerca de 500 ms entre elas. Cada valor medido aparece por três quadros de 120 ms. As barras mudam gradualmente entre as leituras e o painel reproduz os 12 quadros em loop. Os números mostram um trecho recente das métricas, com cerca de 1,5 s de coleta antes do envio e mais o tempo de transmissão Bluetooth.
+
+Com `--animate`, cada atualização usa uma leitura e o GIF anima as bordas a cada 80 ms. Com `--static`, cada atualização usa uma leitura e envia um PNG, reduzindo o atraso.
+
+O monitor envia uma nova imagem quando o conteúdo muda. Nos modos animados, o painel reproduz o GIF entre os envios e o ritmo de reprodução depende do firmware.
+
+```powershell
+.\monitor-ipixel.cmd --theme cyberpunk --animate --preview cyberpunk.gif
+.\monitor-ipixel.cmd --address 02:00:00:00:00:01 --static
+```
 
 ## Métricas e dependências opcionais
 
@@ -167,6 +181,7 @@ Com WMI Dell ou PawnIO, use **Executar com privilégios mais altos**. Instale o 
 ## Estrutura
 
 - [monitor_ipixel.py](monitor_ipixel.py) organiza a leitura de sensores, renderiza os quadros e gerencia a conexão BLE.
+- [display_animation.py](display_animation.py) desenha os efeitos de cada tema e monta os GIFs enviados ao painel.
 - [windows_io.py](windows_io.py) consulta os contadores nativos de disco e rede.
 - [dell_temperature.py](dell_temperature.py) lê o sensor térmico do firmware Dell via WMI.
 - [pawnio_temperature.py](pawnio_temperature.py) lê a temperatura da CPU pelos módulos assinados do PawnIO.

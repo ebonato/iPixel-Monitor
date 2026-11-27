@@ -22,6 +22,14 @@ from PIL import Image, ImageDraw
 from pypixelcolor import AsyncClient
 
 from dell_temperature import DellTemperature
+from display_animation import (
+    FRAME_COUNT,
+    FRAME_MS,
+    VALUE_FRAME_MS,
+    VALUE_SAMPLE_COUNT,
+    VALUE_SAMPLE_SECONDS,
+    save_animation,
+)
 from windows_io import DiskCounters, NetworkCounters
 
 SIZE = (96, 16)
@@ -39,6 +47,7 @@ class Theme:
     network: tuple[str, str]
     heading_rule: str | None = None
     bar_highlight: str | None = None
+    animation: str = "sweep"
 
 
 THEMES = {
@@ -49,12 +58,12 @@ THEMES = {
     "cyberpunk": Theme(
         background="#11051b", reading="#fff6b8", heading="#39112e", track="#3c2543",
         accents=("#f9ef16", "#ff3b9d", "#29f5ff"), network=("#22f5ff", "#ff4b9a"),
-        heading_rule="#ec3297", bar_highlight="#fff2bd",
+        heading_rule="#ec3297", bar_highlight="#fff2bd", animation="cyberpunk",
     ),
     "gta-vi": Theme(
         background="#180d30", reading="#ffedfc", heading="#452051", track="#4a295d",
         accents=("#ffb16b", "#ff73c3", "#75f7dd"), network=("#75f7dd", "#ffb16b"),
-        heading_rule="#f06cac", bar_highlight="#ffc398",
+        heading_rule="#f06cac", bar_highlight="#ffc398", animation="gta-vi",
     ),
 }
 
@@ -291,33 +300,84 @@ def card(draw, index, title, reading, detail, level, theme, detail_color=None):
     bar(draw, x, level, accent, 8, theme)
 
 
-def network_card(draw, download, upload, theme):
+def network_card(draw, download, upload, levels, theme):
     x, _ = card_heading(draw, 2, "REDE", theme)
     for index, (value, color, arrow) in enumerate(zip((download, upload), theme.network, ("↓", "↑"))):
         column = x + 16 * index
         pixel_text(draw, x + 21 + 5 * index, 0, arrow, color)
         pixel_text(draw, column, 7, rate(value), color)
-        level = None if value is None else 100 * math.log1p(max(0, value) / 1000) / math.log1p(100_000)
-        bar(draw, column, level, color, 4, theme)
+        bar(draw, column, levels[index], color, 4, theme)
 
 
-def frame(metrics, page, theme=THEMES["padrao"]):
+def vram_usage(metrics):
+    if metrics.vram_used is not None and metrics.vram_total:
+        return 100 * metrics.vram_used / metrics.vram_total
+    return None
+
+
+def network_usage(bytes_per_second):
+    if bytes_per_second is None:
+        return None
+    return 100 * math.log1p(max(0, bytes_per_second) / 1000) / math.log1p(100_000)
+
+
+def meter_levels(metrics, page):
+    if page == "principal":
+        return metrics.cpu, metrics.gpu, metrics.ram
+    return (vram_usage(metrics), metrics.disk, network_usage(metrics.download), network_usage(metrics.upload))
+
+
+def frame(metrics, page, theme=THEMES["padrao"], levels=None):
+    if levels is None:
+        levels = meter_levels(metrics, page)
     image = Image.new("RGB", SIZE, theme.background)
     draw = ImageDraw.Draw(image)
     if page == "principal":
         cpu_temp, cpu_color = temperature(metrics.cpu_temp)
         gpu_temp, gpu_color = temperature(metrics.gpu_temp)
-        card(draw, 0, "CPU", percent(metrics.cpu), cpu_temp, metrics.cpu, theme, cpu_color)
-        card(draw, 1, "GPU", percent(metrics.gpu), gpu_temp, metrics.gpu, theme, gpu_color)
-        card(draw, 2, "RAM", percent(metrics.ram), space(metrics.ram_gib), metrics.ram, theme, theme.accents[2])
+        card(draw, 0, "CPU", percent(metrics.cpu), cpu_temp, levels[0], theme, cpu_color)
+        card(draw, 1, "GPU", percent(metrics.gpu), gpu_temp, levels[1], theme, gpu_color)
+        card(draw, 2, "RAM", percent(metrics.ram), space(metrics.ram_gib), levels[2], theme, theme.accents[2])
     else:
-        vram_pct = (100 * metrics.vram_used / metrics.vram_total
-                    if metrics.vram_used is not None and metrics.vram_total else None)
         vram_gib = metrics.vram_used / 1024 if metrics.vram_used is not None else None
-        card(draw, 0, "VRAM", percent(vram_pct), space(vram_gib), vram_pct, theme)
-        card(draw, 1, "DISCO", percent(metrics.disk), rate(metrics.disk_bytes_per_second), metrics.disk, theme)
-        network_card(draw, metrics.download, metrics.upload, theme)
+        card(draw, 0, "VRAM", percent(vram_usage(metrics)), space(vram_gib), levels[0], theme)
+        card(draw, 1, "DISCO", percent(metrics.disk), rate(metrics.disk_bytes_per_second), levels[1], theme)
+        network_card(draw, metrics.download, metrics.upload, levels[2:], theme)
     return image
+
+
+async def read_samples(metrics, animate_values):
+    if not animate_values:
+        return [await asyncio.to_thread(metrics.read)]
+
+    samples = []
+    next_reading = time.monotonic()
+    for index in range(VALUE_SAMPLE_COUNT):
+        if index:
+            await asyncio.sleep(max(0, next_reading - time.monotonic()))
+        samples.append(await asyncio.to_thread(metrics.read))
+        next_reading += VALUE_SAMPLE_SECONDS
+    return samples
+
+
+def screen_frames(samples, page, theme):
+    if len(samples) == 1:
+        return [frame(samples[0], page, theme)]
+
+    frames = []
+    frames_per_reading = FRAME_COUNT // len(samples)
+    all_levels = [meter_levels(sample, page) for sample in samples]
+    for index, sample in enumerate(samples):
+        current = all_levels[index]
+        following = all_levels[min(index + 1, len(samples) - 1)]
+        for step in range(frames_per_reading):
+            fraction = step / frames_per_reading
+            levels = [
+                start + (end - start) * fraction if start is not None and end is not None else start
+                for start, end in zip(current, following)
+            ]
+            frames.append(frame(sample, page, theme, levels))
+    return frames
 
 
 async def run(args):
@@ -340,46 +400,67 @@ async def run(args):
         metrics = WindowsMetrics(args.lhm_url, disk, args.gpu_index, cpu_sensor)
         await asyncio.sleep(0.5)
         if args.preview:
-            image = frame(await asyncio.to_thread(metrics.read), args.preview_page, args.theme)
-            image.resize((768, 128), Image.Resampling.NEAREST).save(args.preview)
+            animate_values = args.motion == "values"
+            samples = await read_samples(metrics, animate_values)
+            images = screen_frames(samples, args.preview_page, args.theme)
+            if args.motion != "static":
+                frame_ms = VALUE_FRAME_MS if animate_values else FRAME_MS
+                save_animation(images, args.preview, args.theme, scale=8, frame_ms=frame_ms)
+            else:
+                images[0].resize((768, 128), Image.Resampling.NEAREST).save(args.preview)
         else:
             await display(args, metrics)
 
 
 async def display(args, metrics):
     auto = args.page == "auto" and not args.once
+    animate = args.motion != "static"
+    animate_values = args.motion == "values"
+    frame_ms = VALUE_FRAME_MS if animate_values else FRAME_MS
+    mode_name = {"values": "valores animados", "edges": "bordas animadas", "static": "estático"}[args.motion]
     while True:
         try:
             async with AsyncClient(args.address) as panel:
                 info = panel.get_device_info()
                 if (info.width, info.height) != SIZE:
                     raise ValueError(f"Painel detectado: {info.width}x{info.height}. Esperado: 96x16.")
-                LOGGER.info("Painel conectado.")
+                LOGGER.info("Painel conectado. Modo: %s.", mode_name)
+                animation_start = time.monotonic()
                 page = "principal" if args.page == "auto" else args.page
                 deadline = math.inf
                 last_page = None
                 previous = None
                 while True:
                     started = time.monotonic()
-                    sample = await asyncio.to_thread(metrics.read)
+                    next_sample = started + args.interval
+                    samples = await read_samples(metrics, animate_values)
                     if auto and time.monotonic() >= deadline:
                         page = "detalhes" if page == "principal" else "principal"
-                    image = frame(sample, page, args.theme)
-                    pixels = image.tobytes()
+                    images = screen_frames(samples, page, args.theme)
+                    pixels = tuple(image.tobytes() for image in images)
                     if pixels != previous:
                         buffer = io.BytesIO()
-                        image.save(buffer, format="PNG")
-                        await panel.send_image_hex(buffer.getvalue().hex(), "png", save_slot=0)
+                        if animate:
+                            phase = int((time.monotonic() - animation_start) * 1000 / frame_ms)
+                            save_animation(images, buffer, args.theme, phase=phase, frame_ms=frame_ms)
+                            extension = "gif"
+                        else:
+                            images[0].save(buffer, format="PNG")
+                            extension = "png"
+                        await panel.send_image_hex(buffer.getvalue().hex(), extension, save_slot=0)
                         previous = pixels
+                        if animate:
+                            # Give the display time to play the GIF after the transfer finishes.
+                            next_sample = time.monotonic() + args.interval
                     if page != last_page:
                         last_page = page
                         if auto:
                             deadline = time.monotonic() + args.page_seconds
                             LOGGER.info("Tela %s enviada.", page)
                     if args.once:
-                        LOGGER.info("Quadro %s enviado. %s", page, sample)
+                        LOGGER.info("Tela %s enviada. %s", page, samples[-1])
                         return
-                    await asyncio.sleep(max(0, min(started + args.interval, deadline) - time.monotonic()))
+                    await asyncio.sleep(max(0, min(next_sample, deadline) - time.monotonic()))
         except (BleakError, ConnectionError, TimeoutError, OSError, RuntimeError) as error:
             if args.once:
                 raise
@@ -392,12 +473,19 @@ def main():
     parser.add_argument("--address", help="Endereço Bluetooth do painel (XX:XX:XX:XX:XX:XX).")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--scan", action="store_true", help="Lista painéis próximos sem se conectar.")
-    mode.add_argument("--once", action="store_true", help="Envia um quadro e encerra.")
-    mode.add_argument("--preview", type=Path, help="Gera PNG ampliado sem conectar ao painel.")
+    mode.add_argument("--once", action="store_true", help="Envia a tela uma vez e encerra.")
+    mode.add_argument("--preview", type=Path, help="Gera PNG ou GIF ampliado sem conectar ao painel.")
     parser.add_argument("--scan-seconds", type=float, default=8, help="Duração da busca Bluetooth.")
     parser.add_argument("--interval", type=float, default=2, help="Intervalo de atualização em segundos.")
     parser.add_argument("--page-seconds", type=float, default=8, help="Tempo de exibição de cada tela.")
     parser.add_argument("--theme", choices=THEMES, default="padrao", help="Tema visual do painel (padrão: padrao).")
+    motion = parser.add_mutually_exclusive_group()
+    motion.add_argument("--animate-values", dest="motion", action="store_const", const="values",
+                        help="Reproduz leituras recentes e anima bordas e barras (padrão).")
+    motion.add_argument("--animate", dest="motion", action="store_const", const="edges",
+                        help="Anima as bordas do tema com uma leitura por atualização.")
+    motion.add_argument("--static", dest="motion", action="store_const", const="static",
+                        help="Envia imagens estáticas com uma leitura por atualização.")
     parser.add_argument("--page", choices=("auto", "principal", "detalhes"), default="auto")
     parser.add_argument("--preview-page", choices=("principal", "detalhes"), default="principal")
     parser.add_argument("--disk", help="Unidade monitorada, por exemplo D:. Padrão: unidade do Windows.")
@@ -412,11 +500,16 @@ def main():
     parser.add_argument("--log-file", type=Path, help="Registra eventos em arquivo com rotação.")
     args = parser.parse_args()
     args.theme = THEMES[args.theme]
+    preview_is_gif = args.preview and args.preview.suffix.lower() == ".gif"
+    if args.motion is None:
+        args.motion = "static" if args.preview and not preview_is_gif else "values"
 
     if sys.platform != "win32":
         parser.error("Este monitor requer Windows.")
     if not (args.scan or args.preview or args.address):
         parser.error("Informe --address ou use --scan para encontrar o painel.")
+    if args.motion != "static" and args.preview and not preview_is_gif:
+        parser.error("Use um arquivo .gif para a prévia animada.")
     if args.address and not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", args.address):
         parser.error("--address deve ter o formato XX:XX:XX:XX:XX:XX.")
     if args.disk and not re.fullmatch(r"[A-Za-z]:?", args.disk):
